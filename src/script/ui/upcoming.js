@@ -1,14 +1,14 @@
 // File: src/script/ui/upcoming.js
 import { state } from '../store/app_state.js';
 import { escapeHTML } from '../core/utils.js';
-import { openUpcomingModal } from './modal.js';
+import { openTaskModal } from './modal.js';
 
 export function renderUpcoming() {
     const list = document.getElementById('upcomingList');
     if (!list) return;
     list.innerHTML = '';
 
-    const sortedUpcoming = [...state.upcomingTasks].sort((a, b) => {
+    const sortedUpcoming = [...state.tasks].sort((a, b) => {
         if (!a.date) return 1;
         if (!b.date) return -1;
         const dateA = new Date(a.date);
@@ -39,13 +39,13 @@ export function renderUpcoming() {
             <div class="up-date">${displayDate}</div>
             <div class="up-title">${escapeHTML(up.title)}</div>
         `;
-        tile.onclick = () => openUpcomingModal(up);
+        tile.onclick = () => openTaskModal(up);
         list.appendChild(tile);
     });
 
     const addBtn = document.createElement('div');
     addBtn.className = 'upcoming-add-btn';
     addBtn.innerHTML = '<span class="material-symbols-rounded">add</span>';
-    addBtn.onclick = () => openUpcomingModal(null);
+    addBtn.onclick = () => openTaskModal(null);
     list.appendChild(addBtn);
 }

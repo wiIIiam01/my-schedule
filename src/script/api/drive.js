@@ -1,10 +1,12 @@
+// File: src/script/api/drive.js
 import { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET } from './config.js';
 
 const CLIENT_ID = GOOGLE_CLIENT_ID;
 const CLIENT_SECRET = GOOGLE_CLIENT_SECRET;
 
 let GOOGLE_ACCESS_TOKEN = null;
-let DRIVE_FILE_ID = localStorage.getItem('drive_file_id') || null;
+let DATA_FILE_ID = localStorage.getItem('drive_data_id') || null;
+let MANIFEST_FILE_ID = localStorage.getItem('drive_manifest_id') || null;
 
 export function isGoogleLoggedIn() {
     return GOOGLE_ACCESS_TOKEN !== null;
@@ -47,9 +49,6 @@ export async function loginGoogle() {
                 GOOGLE_ACCESS_TOKEN = tokenData.access_token;
                 localStorage.setItem('google_refresh_token', tokenData.refresh_token);
                 alert("Kết nối Google Drive thành công!");
-                
-                // LƯU Ý: Đã gỡ lệnh gọi smartSync() ở đây để tránh vòng lặp. 
-                // Giao diện (script.js) sẽ tự gọi smartSync sau khi hàm này trả về true.
                 return true; 
             } else if (tokenData.error && tokenData.error !== 'authorization_pending') {
                 isWaiting = false;
@@ -79,84 +78,111 @@ export async function refreshGoogleToken() {
 
         if (data.access_token) {
             GOOGLE_ACCESS_TOKEN = data.access_token;
-            console.log("Đã tải Token mới thành công (Chạy ngầm)");
+            console.log("Đã tải Token mới thành công.");
             return true;
         } else {
             console.warn("Refresh token hết hạn hoặc bị thu hồi.");
             return false;
         }
     } catch (error) {
-        console.error("Lỗi khi refresh token:", error);
         return false;
     }
 }
 
-export async function ensureDriveFileId() {
-    if (DRIVE_FILE_ID) return DRIVE_FILE_ID; // Đã có thì thôi
-    if (!GOOGLE_ACCESS_TOKEN) return null;
+// KHÁM PHÁ CẢ 2 FILE TRÊN DRIVE
+export async function ensureDriveFiles() {
+    if (!GOOGLE_ACCESS_TOKEN) return;
 
     try {
-        const query = encodeURIComponent("name = 'MySchedule_Sync_Data.json' and trashed = false");
-        const response = await fetch(`https://www.googleapis.com/drive/v3/files?q=${query}&orderBy=createdTime%20desc&fields=files(id)`, {
+        const query = encodeURIComponent("trashed = false and (name = 'MySchedule_Data.json' or name = 'MySchedule_Manifest.json')");
+        const response = await fetch(`https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name)`, {
             headers: { 'Authorization': `Bearer ${GOOGLE_ACCESS_TOKEN}` }
         });
         const data = await response.json();
         
-        if (data.files && data.files.length > 0) {
-            DRIVE_FILE_ID = data.files[0].id;
-            localStorage.setItem('drive_file_id', DRIVE_FILE_ID);
-            console.log("Đã tìm thấy file đồng bộ cũ:", DRIVE_FILE_ID);
+        if (data.files) {
+            data.files.forEach(f => {
+                if (f.name === 'MySchedule_Data.json') {
+                    DATA_FILE_ID = f.id;
+                    localStorage.setItem('drive_data_id', f.id);
+                }
+                if (f.name === 'MySchedule_Manifest.json') {
+                    MANIFEST_FILE_ID = f.id;
+                    localStorage.setItem('drive_manifest_id', f.id);
+                }
+            });
         }
     } catch (error) {
         console.error("Lỗi tìm file trên Drive:", error);
     }
-    return DRIVE_FILE_ID;
 }
 
-export async function pullFromGoogleDrive() {
-    if (!GOOGLE_ACCESS_TOKEN || !DRIVE_FILE_ID) return null;
+// KÉO/ĐẨY MANIFEST (Trạm Gác)
+export async function pullManifest() {
+    if (!GOOGLE_ACCESS_TOKEN || !MANIFEST_FILE_ID) return null;
     try {
-        const response = await fetch(`https://www.googleapis.com/drive/v3/files/${DRIVE_FILE_ID}?alt=media`, {
+        const res = await fetch(`https://www.googleapis.com/drive/v3/files/${MANIFEST_FILE_ID}?alt=media`, {
             headers: { 'Authorization': `Bearer ${GOOGLE_ACCESS_TOKEN}` }
         });
-        if (response.ok) {
-            return await response.json();
-        }
-    } catch (error) {
-        console.error("Lỗi kéo dữ liệu:", error);
-    }
+        if (res.ok) return await res.json();
+    } catch (error) { }
     return null;
 }
 
-export async function pushToGoogleDrive(jsonString) {
+export async function pushManifest(jsonString) {
     if (!GOOGLE_ACCESS_TOKEN) return;
+    await uploadFileToDrive('MySchedule_Manifest.json', MANIFEST_FILE_ID, jsonString, (newId) => {
+        MANIFEST_FILE_ID = newId;
+        localStorage.setItem('drive_manifest_id', newId);
+    });
+}
 
-    const metadata = { name: 'MySchedule_Sync_Data.json', mimeType: 'application/json' };
+// KÉO/ĐẨY DATA CHÍNH
+export async function pullData() {
+    if (!GOOGLE_ACCESS_TOKEN || !DATA_FILE_ID) return null;
+    try {
+        const res = await fetch(`https://www.googleapis.com/drive/v3/files/${DATA_FILE_ID}?alt=media`, {
+            headers: { 'Authorization': `Bearer ${GOOGLE_ACCESS_TOKEN}` }
+        });
+        if (res.ok) return await res.json();
+    } catch (error) { }
+    return null;
+}
+
+export async function pushData(jsonString) {
+    if (!GOOGLE_ACCESS_TOKEN) return;
+    await uploadFileToDrive('MySchedule_Data.json', DATA_FILE_ID, jsonString, (newId) => {
+        DATA_FILE_ID = newId;
+        localStorage.setItem('drive_data_id', newId);
+    });
+}
+
+// HÀM LÕI ĐẨY FILE
+async function uploadFileToDrive(fileName, fileId, jsonContent, onNewIdGenerated) {
+    const metadata = { name: fileName, mimeType: 'application/json' };
     const form = new FormData();
     form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-    form.append('file', new Blob([jsonString], { type: 'application/json' }));
+    form.append('file', new Blob([jsonContent], { type: 'application/json' }));
+
+    let url = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
+    let method = 'POST';
+
+    if (fileId) { 
+        url = `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart`;
+        method = 'PATCH';
+    }
 
     try {
-        let url = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
-        let method = 'POST';
-
-        if (DRIVE_FILE_ID) { 
-            url = `https://www.googleapis.com/upload/drive/v3/files/${DRIVE_FILE_ID}?uploadType=multipart`;
-            method = 'PATCH';
-        }
-
         const response = await fetch(url, {
             method: method,
             headers: { 'Authorization': `Bearer ${GOOGLE_ACCESS_TOKEN}` },
             body: form
         });
-
         const result = await response.json();
-        if (result.id && !DRIVE_FILE_ID) {
-            DRIVE_FILE_ID = result.id; 
-            localStorage.setItem('drive_file_id', result.id);
+        if (result.id && !fileId) {
+            onNewIdGenerated(result.id);
         }
     } catch (error) {
-        console.error("Lỗi đẩy dữ liệu:", error);
+        console.error("Lỗi upload:", fileName, error);
     }
 }

@@ -10,18 +10,19 @@ document.getElementById('btnClose').onclick = () => appWindow.close();
 document.getElementById('btnMinimize').onclick = () => appWindow.minimize();
 
 window.onload = async () => {
+    initEvents(); 
     await loadData();
-    const diaryResult = processAutoDiary(state.tasks, state.logs, state.lastLoggedDate);
+    const diaryResult = processAutoDiary(state.recurringTasks, state.logs, state.lastLoggedDate);
     if (diaryResult.hasChanges) {
         state.logs = diaryResult.newLogs;
         state.lastLoggedDate = diaryResult.newLastLoggedDate;
+        state.lastModified = Date.now();
         await saveData();
+        smartSync();
         console.log("Diary updated on load!");
     }
-    updateSyncUI();
     initSettings();
     ui.applyDynamicCSS();
     ui.initCalendar();
     ui.renderUpcoming();
-    initEvents(); 
 };

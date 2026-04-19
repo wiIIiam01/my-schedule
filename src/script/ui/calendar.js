@@ -1,7 +1,7 @@
 // File: src/script/ui/calendar.js
 import { state } from '../store/app_state.js';
 import { APP_CONFIG, escapeHTML, timeToMinutes } from '../core/utils.js';
-import { openModal } from './modal.js';
+import { openRecurringModal } from './modal.js';
 
 export function initCalendar() {
     const today = new Date().getDay();
@@ -23,13 +23,13 @@ export function initCalendar() {
 export function renderBody() {
     const body = document.getElementById('calBody');
     body.innerHTML = '';
-    if (state.tasks.length === 0) return;
+    if (state.recurringTasks.length === 0) return;
 
     let minMin = 24 * 60, maxMin = 0;
     const timeFreq = {}; 
     const allTimes = new Set(); 
 
-    state.tasks.forEach(t => {
+    state.recurringTasks.forEach(t => {
         const s = timeToMinutes(t.start), e = timeToMinutes(t.end);
         if (s < minMin) minMin = s; if (e > maxMin) maxMin = e;
         
@@ -51,7 +51,7 @@ export function renderBody() {
         body.innerHTML += `<div class="horizontal-line" style="top: ${topPercent}%"></div>`;
     });
     
-    state.tasks.forEach(task => {
+    state.recurringTasks.forEach(task => {
         const topPercent = ((timeToMinutes(task.start) - minMin) / totalDuration) * 100;
         const heightPercent = ((timeToMinutes(task.end) - timeToMinutes(task.start)) / totalDuration) * 100;
 
@@ -71,8 +71,7 @@ export function renderBody() {
             const locHtml = task.location ? `<div class="fixed-location">${escapeHTML(task.location)}</div>` : '';
             tile.innerHTML = `<div class="task-title">${escapeHTML(task.title)}</div>${locHtml}`;
             
-            // 🔴 Hàm openModal giờ đã gọi được bình thường
-            tile.onclick = () => openModal(task);
+            tile.onclick = () => openRecurringModal(task);
             body.appendChild(tile);
         });
     });

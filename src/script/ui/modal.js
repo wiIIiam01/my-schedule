@@ -31,8 +31,8 @@ export function openTypeEditor() {
     showModal('typeModal');
 }
 
+export let currentRecurringSnapshot = null;
 export let currentTaskSnapshot = null;
-export let currentUpSnapshot = null;
 
 export function checkForm() {
     const taskModal = document.getElementById('taskModal');
@@ -43,9 +43,9 @@ export function checkForm() {
         const hasDays = document.querySelectorAll('.day-circle.selected').length > 0;
         let isChanged = true;
 
-        if (state.editingTaskId && currentTaskSnapshot) {
+        if (state.editingRecurringId && currentRecurringSnapshot) {
             const currentData = {
-                id: state.editingTaskId,
+                id: state.editingRecurringId,
                 title: title,
                 typeId: document.getElementById('taskType').value,
                 days: Array.from(document.querySelectorAll('.day-circle.selected')).map(c => parseInt(c.dataset.dayIdx)),
@@ -54,7 +54,7 @@ export function checkForm() {
                 location: document.getElementById('taskLocation').value,
                 note: document.getElementById('taskNote').value
             };
-            isChanged = JSON.stringify(currentData) !== currentTaskSnapshot;
+            isChanged = JSON.stringify(currentData) !== currentRecurringSnapshot;
         }
 
         const btnSave = document.getElementById('btnSaveTask');
@@ -66,15 +66,15 @@ export function checkForm() {
         const date = document.getElementById('upDate').value;
         let isChanged = true;
 
-        if (state.editingUpId && currentUpSnapshot) {
+        if (state.editingTaskId && currentTaskSnapshot) {
             const currentData = {
-                id: state.editingUpId,
+                id: state.editingTaskId,
                 title: title,
                 date: date,
                 typeId: document.getElementById('upType').value,
                 note: document.getElementById('upNote').value
             };
-            isChanged = JSON.stringify(currentData) !== currentUpSnapshot;
+            isChanged = JSON.stringify(currentData) !== currentTaskSnapshot;
         }
 
         const btnSave = document.getElementById('btnSaveUp');
@@ -82,9 +82,9 @@ export function checkForm() {
     }
 }
 
-export function openModal(task) {
-    state.editingTaskId = task ? task.id : null;
-    currentTaskSnapshot = task ? JSON.stringify(task) : null;
+export function openRecurringModal(task) {
+    state.editingRecurringId = task ? task.id : null;
+    currentRecurringSnapshot = task ? JSON.stringify(task) : null;
 
     document.getElementById('taskTitle').value = task ? task.title : '';
     document.getElementById('taskStart').value = task ? task.start : '08:00';
@@ -108,20 +108,20 @@ export function openModal(task) {
     showModal('taskModal');
 }
 
-export function openUpcomingModal(up) {
-    state.editingUpId = up ? up.id : null;
-    currentUpSnapshot = up ? JSON.stringify(up) : null;
+export function openTaskModal(task) {
+    state.editingTaskId = task ? task.id : null;
+    currentTaskSnapshot = task ? JSON.stringify(task) : null;
 
-    document.getElementById('upTitle').value = up ? up.title : '';
-    document.getElementById('upDate').value = up ? up.date : '';
-    document.getElementById('upNote').value = up ? (up.note || '') : '';
+    document.getElementById('upTitle').value = task ? task.title : '';
+    document.getElementById('upDate').value = task ? task.date : '';
+    document.getElementById('upNote').value = task ? (task.note || '') : '';
     
-    if(up && state.types.find(t => t.id === up.typeId)) {
-        document.getElementById('upType').value = up.typeId;
+    if(task && state.types.find(t => t.id === task.typeId)) {
+        document.getElementById('upType').value = task.typeId;
     }
 
-    document.getElementById('btnEraseUp').style.display = up ? 'block' : 'none';
-    document.getElementById('btnFinishUp').style.display = up ? 'block' : 'none';
+    document.getElementById('btnEraseUp').style.display = task ? 'block' : 'none';
+    document.getElementById('btnFinishUp').style.display = task ? 'block' : 'none';
     
     checkForm();
     showModal('upcomingModal');

@@ -1,3 +1,4 @@
+import { dispatch, ACTIONS } from './store/ledger.js';
 const { LogicalSize, getCurrentWindow } = window.__TAURI__.window;
 
 import { state, saveData, saveSettings, smartSync } from './store/app_state.js';
@@ -72,38 +73,31 @@ function initSettings() {
 
 // B. HÀM KHỞI TẠO SỰ KIỆN CLICK (EVENTS)
 function initEvents() {
+    window.addEventListener('sync_completed', () => {
+        ui.updateTypeSelects();
+        ui.applyDynamicCSS();
+        ui.initCalendar();
+        ui.renderUpcoming();
+    });
+    window.addEventListener('sync_status', (e) => {
+        updateSyncUI(e.detail);
+    });
     // Cập nhật danh sách loại Task vào thẻ select
     ui.updateTypeSelects();
 
     // --- 1. GOOGLE DRIVE SYNC BTN ---
     const btnGoogleLogin = document.getElementById('btnGoogleLogin');
-    const syncIcon = document.getElementById('syncIcon');
     
-    if (btnGoogleLogin && syncIcon) {
+    if (btnGoogleLogin) {
         btnGoogleLogin.onclick = async () => {
-            if (drive.isGoogleLoggedIn()) {
-                btnGoogleLogin.classList.add('is-loading');
-                syncIcon.textContent = 'sync';
-                btnGoogleLogin.title = "Synchronizing...";
-
-                await smartSync(); 
-
-                btnGoogleLogin.classList.remove('is-loading');
-                syncIcon.textContent = 'cloud_done';
-                btnGoogleLogin.title = "Updated";
-            } else {
-                btnGoogleLogin.classList.add('is-loading');
-                syncIcon.textContent = 'sync';
-                btnGoogleLogin.title = "Getting API...";
-
+            if (!drive.isGoogleLoggedIn()) {
+                updateSyncUI('syncing');
                 const isSuccess = await drive.loginGoogle();
                 if (isSuccess) {
-                    await smartSync();
-                    ui.renderBody();
-                    ui.renderUpcoming();
+                    smartSync(); 
+                } else {
+                    updateSyncUI('offline'); 
                 }
-                btnGoogleLogin.classList.remove('is-loading');
-                updateSyncUI();
             }
         };
     }
@@ -125,12 +119,14 @@ function initEvents() {
 
     // --- 3. MODAL LOGS (NHẬT KÝ) ---
     document.getElementById('btnLog').onclick = async () => {
-        const diaryResult = processAutoDiary(state.tasks, state.logs, state.lastLoggedDate);
+        const diaryResult = processAutoDiary(state.recurringTasks, state.logs, state.lastLoggedDate);
         
         if (diaryResult.hasChanges) {
             state.logs = diaryResult.newLogs;
             state.lastLoggedDate = diaryResult.newLastLoggedDate;
+            state.lastModified = Date.now();
             await saveData();
+            smartSync(); // Gọi sync luôn
             console.log("Diary updated!");
         }
 
@@ -139,88 +135,79 @@ function initEvents() {
     document.getElementById('btnCancelLog').onclick = () => ui.hideModal('logModal');
 
     // --- 4. MODAL WEEKLY TASK ---
-    document.getElementById('btnAdd').onclick = () => ui.openModal(null);
+    document.getElementById('btnAdd').onclick = () => ui.openRecurringModal(null);
     document.getElementById('btnCancelTask').onclick = () => ui.hideModal('taskModal');
-    document.getElementById('btnSaveTask').onclick = saveTask;
+    document.getElementById('btnSaveTask').onclick = saveRecurringTask;
     
     document.getElementById('btnEraseTask').onclick = () => {
-        targetActionType = 'task';
+        targetActionType = 'recurring';
         document.getElementById('chkDeleteInDiary').checked = false;
         ui.showModal('confirmEraseModal');
     };
     document.getElementById('btnFinishTask').onclick = () => {
-        targetActionType = 'task';
+        targetActionType = 'recurring';
         ui.showModal('confirmFinishModal');
     };
 
     // --- 5. MODAL UPCOMING TASK ---
     document.getElementById('btnCancelUp').onclick = () => ui.hideModal('upcomingModal');
-    document.getElementById('btnSaveUp').onclick = saveUpcoming;
+    document.getElementById('btnSaveUp').onclick = saveTask;
     
     document.getElementById('btnEraseUp').onclick = () => {
-        targetActionType = 'upcoming';
+        targetActionType = 'task';
         document.getElementById('chkDeleteInDiary').checked = false;
         ui.showModal('confirmEraseModal');
     };
     document.getElementById('btnFinishUp').onclick = () => {
-        targetActionType = 'upcoming';
+        targetActionType = 'task';
         ui.showModal('confirmFinishModal');
     };
 
     // --- 6. POPUP CONFIRM ERASE ---
     document.getElementById('btnCancelEraseConfirm').onclick = () => ui.hideModal('confirmEraseModal');
-    document.getElementById('btnDoErase').onclick = () => {
+    document.getElementById('btnDoErase').onclick = async () => {
         const wipeDiary = document.getElementById('chkDeleteInDiary').checked;
-        const idToErase = targetActionType === 'task' ? state.editingTaskId : state.editingUpId;
-
-        if (targetActionType === 'task') {
-            state.tasks = state.tasks.filter(t => t.id !== idToErase);
+        
+        if (targetActionType === 'recurring') { 
+            await dispatch(ACTIONS.DELETE_RECURRING, { id: state.editingRecurringId, wipeDiary });
             ui.hideModal('taskModal');
             ui.initCalendar(); 
         } else {
-            state.upcomingTasks = state.upcomingTasks.filter(t => t.id !== idToErase);
+            await dispatch(ACTIONS.DELETE_TASK, { id: state.editingTaskId, wipeDiary });
             ui.hideModal('upcomingModal');
             ui.renderUpcoming(); 
         }
-
-        if (wipeDiary) {
-            state.logs = state.logs.filter(log => log.taskId !== idToErase);
-        }
-
-        saveData();
         ui.hideModal('confirmEraseModal');
     };
 
     // --- 7. POPUP CONFIRM FINISH ---
     document.getElementById('btnCancelFinishConfirm').onclick = () => ui.hideModal('confirmFinishModal');
-    document.getElementById('btnDoFinish').onclick = () => {
-        if (targetActionType === 'task') {
-            state.tasks = state.tasks.filter(t => t.id !== state.editingTaskId);
+    document.getElementById('btnDoFinish').onclick = async () => {
+        if (targetActionType === 'recurring') {
+            // Lịch thì hoàn thành tương đương xóa (ko wipe)
+            await dispatch(ACTIONS.DELETE_RECURRING, { id: state.editingRecurringId, wipeDiary: false });
             ui.hideModal('taskModal');
             ui.initCalendar();
         } else {
-            const upTask = state.upcomingTasks.find(t => t.id === state.editingUpId);
-            if (upTask) {
+            const theTask = state.tasks.find(t => t.id === state.editingTaskId);
+            if (theTask) {
                 const now = new Date();
                 const timeStr = `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`;
                 
-                state.logs.push({
-                    logId: crypto.randomUUID(),
+                const logEntry = {
+                    logId: crypto.randomUUID(), 
                     date: now.toISOString().split('T')[0],
-                    taskId: upTask.id,
-                    title: upTask.title,
-                    start: timeStr,
-                    end: timeStr,
-                    typeId: upTask.typeId
-                });
+                    taskId: theTask.id,
+                    title: theTask.title,
+                    start: timeStr, end: timeStr,
+                    typeId: theTask.typeId
+                };
                 
-                state.upcomingTasks = state.upcomingTasks.filter(t => t.id !== state.editingUpId);
+                await dispatch(ACTIONS.FINISH_TASK, { taskId: theTask.id, newLog: logEntry });
             }
             ui.hideModal('upcomingModal');
             ui.renderUpcoming();
         }
-
-        saveData();
         ui.hideModal('confirmFinishModal');
     };
 
@@ -228,47 +215,65 @@ function initEvents() {
     document.getElementById('btnEditType').onclick = ui.openTypeEditor;
     document.getElementById('btnCancelType').onclick = () => ui.hideModal('typeModal');
 
-    document.getElementById('btnSaveType').onclick = () => {
-        const t = state.types.find(x => x.id === document.getElementById('typeEditSelect').value);
-        if(t) {
-            t.customCSS = document.getElementById('typeCssInput').value;
-            saveData(); 
-            ui.applyDynamicCSS(); 
-            ui.renderBody(); 
-            ui.renderUpcoming();
-        }
+    // SỬA TYPE
+    document.getElementById('btnSaveType').onclick = async () => {
+        const typeId = document.getElementById('typeEditSelect').value;
+        const customCSS = document.getElementById('typeCssInput').value;
+        
+        await dispatch(ACTIONS.UPDATE_TYPE, { id: typeId, customCSS: customCSS });
+        
+        ui.applyDynamicCSS(); 
+        ui.renderBody(); 
+        ui.renderUpcoming();
         ui.hideModal('typeModal');
     };
 
-    document.getElementById('btnAddType').onclick = () => {
+    // THÊM TYPE
+    document.getElementById('btnAddType').onclick = async () => {
         const name = document.getElementById('newTypeName').value.trim();
         if(!name) return;
-        const newType = { id: 't_' + crypto.randomUUID(), name: name, customCSS: "background: #eee; color: #333;" };
-        state.types.push(newType);
-        saveData(); 
+        
+        const newType = { 
+            id: 't_' + crypto.randomUUID(), 
+            name: name, 
+            customCSS: "background: #eee; color: #333;" 
+        };
+        
+        await dispatch(ACTIONS.ADD_TYPE, newType);
+        
         ui.updateTypeSelects(); 
         ui.applyDynamicCSS();
         
+        // Reset form nhanh
         document.getElementById('newTypeName').value = '';
         document.getElementById('typeEditSelect').value = newType.id;
         document.getElementById('typeCssInput').value = newType.customCSS;
     };
 
-    document.getElementById('btnDeleteType').onclick = () => {
-        if(!state.types || state.types.length <= 1) { alert("Phải có ít nhất 1 Type!"); return; } 
+    // XÓA TYPE
+    document.getElementById('btnDeleteType').onclick = async () => {
+        if(!state.types || state.types.length <= 1) { 
+            alert("Phải có ít nhất 1 Type!"); 
+            return; 
+        } 
+        
         const idToDelete = document.getElementById('typeEditSelect').value;
-        state.types = state.types.filter(t => t.id !== idToDelete);
+        
+        // Tìm ID thay thế (Type đầu tiên còn lại khác với Type sắp bị xóa)
+        const fallbackType = state.types.find(t => t.id !== idToDelete);
+        const fallbackId = fallbackType ? fallbackType.id : state.types[0].id;
 
-        const fallbackId = state.types[0].id;
-        state.tasks.forEach(t => { if(t.typeId === idToDelete) t.typeId = fallbackId; });
-        state.upcomingTasks.forEach(t => { if(t.typeId === idToDelete) t.typeId = fallbackId; });
+        await dispatch(ACTIONS.DELETE_TYPE, { 
+            typeId: idToDelete, 
+            fallbackId: fallbackId 
+        });
 
-        saveData(); 
         ui.updateTypeSelects(); 
         ui.applyDynamicCSS(); 
         ui.renderBody(); 
         ui.renderUpcoming();
         
+        // Kích hoạt event đổi select để textarea tự cập nhật CSS của type thay thế
         document.getElementById('typeEditSelect').dispatchEvent(new Event('change'));
     };
 
@@ -284,10 +289,10 @@ function initEvents() {
 }
 
 // C. HÀM LƯU DỮ LIỆU TỪ FORM
-function saveTask() {
+async function saveRecurringTask() {
     if(!document.getElementById('btnSaveTask').classList.contains('active')) return;
     const newTask = {
-        id: state.editingTaskId || crypto.randomUUID(),
+        id: state.editingRecurringId || crypto.randomUUID(),
         title: document.getElementById('taskTitle').value,
         typeId: document.getElementById('taskType').value,
         days: Array.from(document.querySelectorAll('.day-circle.selected')).map(c => parseInt(c.dataset.dayIdx)),
@@ -298,19 +303,18 @@ function saveTask() {
         updatedAt: Date.now()
     };
 
-    if (state.editingTaskId) {
-        state.tasks[state.tasks.findIndex(t => t.id === state.editingTaskId)] = newTask;
+    if (state.editingRecurringId) {
+        await dispatch(ACTIONS.UPDATE_RECURRING, newTask);
     } else {
-        state.tasks.push(newTask);
+        await dispatch(ACTIONS.ADD_RECURRING, newTask);
     }
-    saveData(); 
     ui.initCalendar(); 
     ui.hideModal('taskModal');
 }
 
-function saveUpcoming() {
-    const newUp = {
-        id: state.editingUpId || crypto.randomUUID(),
+async function saveTask() {
+    const newTask = {
+        id: state.editingTaskId || crypto.randomUUID(),
         title: document.getElementById('upTitle').value,
         date: document.getElementById('upDate').value,
         typeId: document.getElementById('upType').value,
@@ -318,30 +322,43 @@ function saveUpcoming() {
         updatedAt: Date.now()
     };
 
-    if (state.editingUpId) {
-        state.upcomingTasks[state.upcomingTasks.findIndex(t => t.id === state.editingUpId)] = newUp;
+    if (state.editingTaskId) {
+        await dispatch(ACTIONS.UPDATE_TASK, newTask);
     } else {
-        state.upcomingTasks.push(newUp);
+        await dispatch(ACTIONS.ADD_TASK, newTask);
     }
-    saveData(); 
+    
     ui.renderUpcoming(); 
     ui.hideModal('upcomingModal');
 }
 
 // D. CẬP NHẬT GIAO DIỆN NÚT ĐỒNG BỘ
-function updateSyncUI() {
-    const btnGoogleLogin = document.getElementById('btnGoogleLogin');
-    const syncIcon = document.getElementById('syncIcon');
-    if (!btnGoogleLogin || !syncIcon) return;
+// D. CẬP NHẬT GIAO DIỆN NÚT ĐỒNG BỘ
+function updateSyncUI(status) {
+    const btn = document.getElementById('btnGoogleLogin');
+    const icon = document.getElementById('syncIcon');
+    if (!btn || !icon) return;
 
-    if (drive.isGoogleLoggedIn()) {
-        btnGoogleLogin.classList.add('is-connected');
-        syncIcon.textContent = 'cloud_done';
-        btnGoogleLogin.title = "Connected";
-    } else {
-        btnGoogleLogin.classList.remove('is-connected');
-        syncIcon.textContent = 'cloud_off';
-        btnGoogleLogin.title = "Connect";
+    btn.classList.remove('is-loading', 'is-connected');
+
+    // 2. Nếu CHƯA đăng nhập -> Nút trở về bình thường (bấm được)
+    if (!drive.isGoogleLoggedIn()) {
+        icon.textContent = 'login';
+        return; 
+    }
+
+    // 3. Nếu ĐÃ đăng nhập -> Dùng class CSS để điều khiển
+    if (status === 'offline') {
+        btn.classList.add('is-connected'); // Vẫn khóa nút
+        icon.textContent = 'cloud_off';
+    } 
+    else if (status === 'syncing') {
+        btn.classList.add('is-loading');   // Khóa nút + Kích hoạt animation xoay
+        icon.textContent = 'sync';
+    } 
+    else if (status === 'synced') {
+        btn.classList.add('is-connected'); // Khóa nút + Nằm im
+        icon.textContent = 'cloud_done';
     }
 }
 

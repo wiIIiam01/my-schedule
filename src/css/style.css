@@ -276,7 +276,9 @@ body {
 #btnGoogleLogin.is-connected #syncIcon {
     color: var(--color-success); /* Dùng biến xanh lá có sẵn của bạn */
 }
-
+#btnGoogleLogin.is-connected { 
+    pointer-events: none; /* Khóa không cho bấm */
+}
 @keyframes spin {
     100% { transform: rotate(360deg); }
 }

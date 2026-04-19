@@ -1,11 +1,11 @@
 /**
  * Hàm xử lý Auto Diary hoàn toàn độc lập.
- * @param {Array} currentTasks - Danh sách task hiện tại
+ * @param {Array} currentRecurringTasks - Danh sách task hiện tại
  * @param {Array} currentLogs - Danh sách log hiện hành
  * @param {String} lastLoggedDate - Ngày lưu log cuối cùng (YYYY-MM-DD)
  * @returns {Object} - Kết quả tính toán { hasChanges, newLogs, newLastLoggedDate }
  */
-export function processAutoDiary(currentTasks, currentLogs, lastLoggedDate) {
+export function processAutoDiary(currentRecurringTasks, currentLogs, lastLoggedDate) {
     const getLocalDateString = (d) => {
         const year = d.getFullYear();
         const month = (d.getMonth() + 1).toString().padStart(2, '0');
@@ -41,7 +41,7 @@ export function processAutoDiary(currentTasks, currentLogs, lastLoggedDate) {
         let dayOfWeek = checkDate.getDay();
         let dateString = getLocalDateString(checkDate);
         
-        let tasksForDay = currentTasks.filter(t => t.days && t.days.includes(dayOfWeek));
+        let tasksForDay = currentRecurringTasks.filter(t => t.days && t.days.includes(dayOfWeek));
 
         tasksForDay.forEach(t => {
             const isLogged = newLogs.some(log => log.date === dateString && log.taskId === t.id);
