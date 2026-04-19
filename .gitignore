@@ -32,6 +32,7 @@ src-tauri/Cargo.lock
 
 .env
 .env.local
+src/script/api/config.js
 
 .DS_Store
 Thumbs.db
