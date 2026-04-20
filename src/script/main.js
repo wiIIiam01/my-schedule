@@ -12,17 +12,9 @@ document.getElementById('btnMinimize').onclick = () => appWindow.minimize();
 window.onload = async () => {
     initEvents(); 
     await loadData();
-    const diaryResult = processAutoDiary(state.recurringTasks, state.logs, state.lastLoggedDate);
-    if (diaryResult.hasChanges) {
-        state.logs = diaryResult.newLogs;
-        state.lastLoggedDate = diaryResult.newLastLoggedDate;
-        state.lastModified = Date.now();
-        await saveData();
-        smartSync();
-        console.log("Diary updated on load!");
-    }
     initSettings();
     ui.applyDynamicCSS();
+    ui.updateTypeSelects();
     ui.initCalendar();
     ui.renderUpcoming();
 };

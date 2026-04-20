@@ -192,14 +192,18 @@ function initEvents() {
             const theTask = state.tasks.find(t => t.id === state.editingTaskId);
             if (theTask) {
                 const now = new Date();
-                const timeStr = `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`;
-                
+                let deadlineTime = "";
+                if (theTask.date && theTask.date.includes('T')) {
+                    deadlineTime = theTask.date.split('T')[1]; 
+                } else if (theTask.date && theTask.date.includes(' ')) {
+                    deadlineTime = theTask.date.split(' ')[1];
+                }
                 const logEntry = {
                     logId: crypto.randomUUID(), 
                     date: now.toISOString().split('T')[0],
                     taskId: theTask.id,
                     title: theTask.title,
-                    start: timeStr, end: timeStr,
+                    start: deadlineTime, end: "",
                     typeId: theTask.typeId
                 };
                 

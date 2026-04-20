@@ -92,6 +92,7 @@ export async function refreshGoogleToken() {
 // KHÁM PHÁ CẢ 2 FILE TRÊN DRIVE
 export async function ensureDriveFiles() {
     if (!GOOGLE_ACCESS_TOKEN) return;
+    if (DATA_FILE_ID && MANIFEST_FILE_ID) return;
 
     try {
         const query = encodeURIComponent("trashed = false and (name = 'MySchedule_Data.json' or name = 'MySchedule_Manifest.json')");
@@ -121,9 +122,19 @@ export async function ensureDriveFiles() {
 export async function pullManifest() {
     if (!GOOGLE_ACCESS_TOKEN || !MANIFEST_FILE_ID) return null;
     try {
-        const res = await fetch(`https://www.googleapis.com/drive/v3/files/${MANIFEST_FILE_ID}?alt=media`, {
-            headers: { 'Authorization': `Bearer ${GOOGLE_ACCESS_TOKEN}` }
+        const res = await fetch(`https://www.googleapis.com/drive/v3/files/${MANIFEST_FILE_ID}?alt=media&t=${Date.now()}`, {
+            headers: { 
+                'Authorization': `Bearer ${GOOGLE_ACCESS_TOKEN}`,
+                'Cache-Control': 'no-cache, no-store, must-revalidate'
+            }
         });
+        if (res.status === 404) {
+            console.warn("Không tìm thấy Manifest trên Drive. Tiến hành reset ID...");
+            MANIFEST_FILE_ID = null;
+            localStorage.removeItem('drive_manifest_id');
+            return null;
+        }
+        
         if (res.ok) return await res.json();
     } catch (error) { }
     return null;
@@ -173,13 +184,25 @@ async function uploadFileToDrive(fileName, fileId, jsonContent, onNewIdGenerated
     }
 
     try {
-        const response = await fetch(url, {
+        let response = await fetch(url, {
             method: method,
             headers: { 'Authorization': `Bearer ${GOOGLE_ACCESS_TOKEN}` },
             body: form
         });
+        if (response.status === 404 && method === 'PATCH') {
+            console.warn(`File ${fileName} bị xóa. Tự động tạo file mới...`);
+            url = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
+            method = 'POST';
+            response = await fetch(url, {
+                method: method,
+                headers: { 'Authorization': `Bearer ${GOOGLE_ACCESS_TOKEN}` },
+                body: form
+            });
+        }
+
         const result = await response.json();
-        if (result.id && !fileId) {
+        // Chỉ lưu ID mới nếu đó là hành động POST (tạo mới)
+        if (result.id && method === 'POST') {
             onNewIdGenerated(result.id);
         }
     } catch (error) {

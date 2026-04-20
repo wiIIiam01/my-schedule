@@ -5,6 +5,7 @@ import { openRecurringModal } from './modal.js';
 
 export function initCalendar() {
     const today = new Date().getDay();
+    const todayObj = new Date();
     const header = document.getElementById('calHeader');
     state.displayDaysIdx = [];
     document.querySelectorAll('.day-head').forEach(e => e.remove());
@@ -12,9 +13,15 @@ export function initCalendar() {
     for (let i = 0; i < 7; i++) {
         const currentDayIdx = (today + i) % 7;
         state.displayDaysIdx.push(currentDayIdx);
+        const colDate = new Date();
+        colDate.setDate(todayObj.getDate() + i);
+        const dateString = colDate.toLocaleDateString('en-US', { month: 'short', day: '2-digit' });
         const dayDiv = document.createElement('div');
         dayDiv.className = `day-head ${i === 0 ? 'today' : ''}`;
-        dayDiv.innerText = APP_CONFIG.DAYS_MAP[currentDayIdx];
+        dayDiv.innerHTML = `
+            <div class="day-name">${APP_CONFIG.DAYS_MAP[currentDayIdx]}</div>
+            <div class="day-date">${dateString}</div>
+        `;
         header.appendChild(dayDiv);
     }
     renderBody();

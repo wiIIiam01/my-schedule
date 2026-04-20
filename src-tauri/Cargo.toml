@@ -1,8 +1,8 @@
 [package]
 name = "my-schedule-tauri"
-version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+version = "2.1.0"
+description = "Time Management App"
+authors = ["William Phong Nguyen"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
